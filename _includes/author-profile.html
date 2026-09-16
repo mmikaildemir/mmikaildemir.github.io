@@ -87,6 +87,9 @@
       {% endif %}      
       {% if author.stackoverflow %}
         <li><a href="https://www.stackoverflow.com/users/{{ author.stackoverflow }}"><i class="fab fa-fw fa-stack-overflow icon-pad-right" aria-hidden="true"></i>Stackoverflow</a></li>
+      {% endif %}
+      {% if author.huggingface %}
+        <li><a href="https://huggingface.co/{{ author.huggingface }}"><i class="fas fa-fw fa-face-smile icon-pad-right" aria-hidden="true"></i>Hugging Face</a></li>
       {% endif %}      
 
       <!-- Font Awesome icons / Social media -->
