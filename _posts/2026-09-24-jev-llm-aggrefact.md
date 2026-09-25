@@ -1,5 +1,5 @@
 ---
-title: 'I Ran Jev Against the Whole LLM-AggreFact Benchmark. It Came First.'
+title: 'Jev 1.13 on the LLM-AggreFact Benchmark'
 date: 2026-09-24
 permalink: /posts/2026/09/jev-llm-aggrefact/
 tags:
@@ -8,13 +8,13 @@ tags:
   - benchmarks
 ---
 
-*Roughly five hours of API calls, 29,320 claims, $1.29.*
+*29,320 claims, 11 datasets, $1.29.*
 
 ---
 
 ## TL;DR
 
-I ran TypeSafe's new "System One" model, **Jev 1.13**, against the full test split of **LLM-AggreFact**, the standard public benchmark for grounded fact-checking. One `noul` (yes/no) question per claim, threshold 0.5, no tuning, no per-dataset prompts.
+I ran TypeSafe's "System One" model, **Jev 1.13**, against the full test split of **LLM-AggreFact**, the standard public benchmark for grounded fact-checking. One `noul` (yes/no) question per claim, threshold 0.5, no tuning, no per-dataset prompts.
 
 | | |
 |---|---|
@@ -22,82 +22,52 @@ I ran TypeSafe's new "System One" model, **Jev 1.13**, against the full test spl
 | Current public SOTA (Bespoke-Minicheck-7B) | 77.4 |
 | Best LLM on the leaderboard (Claude-3.5 Sonnet) | 77.2 |
 | Examples evaluated | 29,320 (full test set, all 11 datasets) |
-| Median latency | **355 ms** |
 | Total cost | **$1.29** |
 
 That number would put Jev at the top of the [LLM-AggreFact leaderboard](https://llm-aggrefact.github.io/), ahead of a 7B model purpose-built for this exact task and ahead of every frontier LLM that has been submitted.
 
-It also came with a pile of caveats that I think matter more than the headline. Those are in the second half.
+It also comes with caveats that matter more than the headline. Those are in the second half.
 
 ---
 
 ## What Jev actually is
 
-On September 15, 2026, TypeSafe AI came out of two years of stealth and [released Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev), which they call the first **System One Model**. The founder, Diogo Almeida, previously worked on the RLHF methods behind ChatGPT at OpenAI, and the framing of the launch post is that chat was the wrong shape for automation:
+TypeSafe AI released Jev on September 15, 2026, describing it as the first **System One Model**. The central claim is that autoregressive text generation is the wrong interface for automation workloads.
 
-> "Models have been superhuman at chat for years, so where is all the automation?"
+**Jev does not generate text.** You send it a `state` (a string, a JSON object, or an array of strings) and a set of `questions`, and it returns a typed answer per question with a probability distribution. Three question types:
 
-The pitch is that Jev is not a smaller LLM. It's a different thing. The clearest way to describe it is what it gives up:
-
-**Jev does not generate text.** At all. There is no string output, no chain of thought, no explanation. You send it a `state` (a string, a JSON object, or an array of strings) and a set of `questions`, and it returns a typed answer per question with a probability distribution attached. Three question types:
-
-- **`noul`** — is this statement true? Returns a single probability.
+- **`noul`** — binary true/false. Returns a single probability.
 - **`choice`** — pick one of up to 255 options. Returns the winner, a probability per option, and a confidence score derived from the shape of the distribution.
 - **`score`** — place the subject on an ordered scale of 2–10 levels you define. Returns a probability-weighted average, the per-level distribution, and a confidence.
 
-Every question in a request is evaluated **in parallel against the same state**, so asking five questions costs one round trip and only the marginal input tokens for the extra question text. There's no autoregressive decoding, which is where the speed comes from.
+Every question in a request is evaluated **in parallel against the same state**, so multiple questions cost one round trip. There is no autoregressive decoding.
 
-The training method is something they call **Reinforcement Learning for Calibrated Decisions (RLCD)**, optimizing for "answers with epistemically honest probabilities" rather than human preference (RLHF) or verifiable rewards (RLVR).
+The training method is **Reinforcement Learning for Calibrated Decisions (RLCD)**, described as optimizing for calibrated probabilities rather than human preference (RLHF) or verifiable rewards (RLVR).
 
-Published pricing: **$0.042 per million input tokens. Output tokens free.** For comparison, that's roughly 60–240x below frontier LLM input pricing. Claimed end-to-end latency: 70–500 ms.
+Published pricing: **$0.042 per million input tokens. Output tokens free.**
 
 ### The hype
 
-The launch landed hard. Within about a week:
+A search for "jev" on GitHub returns over 11,000 repositories, spanning content moderation, trading agents, email triage, and browser automation. Academic interest is also growing: as of late September 2026, over 25 papers on arXiv reference Jev or the System One paradigm.
 
-- **LangChain shipped an integration** and wrote [a whole post about it](https://www.langchain.com/blog/building-a-harness-with-jev), repeating TypeSafe's claim of "up to 200x faster inference and 400x lower cost than comparable LLMs on classification tasks." They built two pieces of middleware around it: `ModelRouterMiddleware` (use Jev to pick which LLM handles a request) and `AutoModeMiddleware` (use Jev to gate risky tool calls before they execute). Their framing of the second one is sharp — the dangerous-action classifier that Claude Code, Codex and Cursor all ship has been locked inside closed-source harnesses, and a cheap performant classifier makes that pattern available to everyone.
-- **OpenRouter published a full tutorial**, exposing Jev through their Decisions API at `typesafe/jev-1.13` and a `POST /api/alpha/decisions` endpoint. No TypeSafe account needed.
-- People started building: browser-use agents for fractions of a cent, live trading agents, email triage at scale.
-
-TypeSafe's own numbers are extraordinary: **193.6x faster, 444.6x cheaper** on their internal workflow evals. To their credit, they front-load the caveats themselves — the workflows were built by their own model capabilities team, the reference answers are the average of two competitor models, and they explicitly say "we love skeptics, and are skeptics ourselves."
-
-Fine. Let's be skeptics.
+TypeSafe's own numbers are **193.6x faster, 444.6x cheaper** on their internal workflow evals — with the caveat that those workflows were built by their own team and reference answers are averages of two competitor models.
 
 ---
 
 ## Why fact-checking, and why LLM-AggreFact
 
-The interesting thing about the launch was what it *didn't* include. TypeSafe published side-by-side demos, internal workflow evals, Doom, and Wikiracing. The FAQ has an entry titled "How does Jev perform against public benchmarks?" — collapsed by default on the page I read.
+Grounded fact-checking is a favorable test case for Jev — worth being upfront about:
 
-Internal evals built by the team shipping the model are the weakest form of evidence. So I wanted an **external, pre-existing, human-labeled benchmark with a published leaderboard that Jev's makers had no hand in constructing.**
-
-Grounded fact-checking is close to an ideal test case for Jev, and I want to be upfront that this is a *favorable* choice, not a neutral one:
-
-1. **It's natively a `noul` question.** "Is this claim supported by this document?" is a binary proposition. No prompt engineering gymnastics required to force Jev's shape onto the task.
-2. **It's the canonical guardrail workload.** If Jev's use case is "verify everything — score, judge, verify, guardrail," then hallucination detection on grounding documents *is* the use case, not a proxy for it.
+1. **It's natively a `noul` question.** "Is this claim supported by this document?" is a binary proposition.
+2. **It's the canonical guardrail workload.** If Jev's stated use case is verification and guardrailing, then hallucination detection on grounding documents is the use case, not a proxy for it.
 3. **Volume is the point.** As the LLM-AggreFact authors put it: "A response from an LLM might consist of many sentences. To identify and localize errors, a fact-checker needs to be called many times. If we use GPT-4 as the fact-checker, we can easily spend >10x more to verify the response than we did to produce it in the first place!" A 100x cost reduction changes what you can afford to check.
 4. **There's a real leaderboard with 39 models on it**, including frontier LLMs and specialized models down to 0.4B parameters, so "good" has an unambiguous meaning.
 
 ### The MiniCheck paper
 
-LLM-AggreFact was introduced in **"MiniCheck: Efficient Fact-Checking of LLMs on Grounding Documents"** (Liyan Tang, Philippe Laban, Greg Durrett — EMNLP 2024, pages 8818–8847). It's worth reading on its own terms, because the paper's thesis is almost exactly TypeSafe's, arrived at two years earlier by a different route:
+LLM-AggreFact was introduced in **"MiniCheck: Efficient Fact-Checking of LLMs on Grounding Documents"** (Liyan Tang, Philippe Laban, Greg Durrett — EMNLP 2024, pages 8818–8847). The benchmark aggregates human-annotated (document, claim, label) tuples across diverse sources — Wikipedia paragraphs, news, interviews, and web text — spanning domains including dialogue, science, and healthcare. Full methodology, including dataset construction and the synthetic data pipeline used to train the MiniCheck models, is described in the paper.
 
-> "we show how to build small fact-checking models that have GPT-4-level performance but for 400x lower cost."
-
-Their method is synthetic data generation with GPT-4, in two directions:
-
-- **C2D ("claim to doc")** — take a human-written claim, decompose it into atomic facts with GPT-3.5, then have GPT-4 expand each atomic fact into a *pair* of sentences designed such that the fact is supported **if and only if information from both sentences is combined**. Then generate a document containing those sentence pairs. Delete one sentence of a pair to produce a negative. This forces multi-sentence reasoning rather than lexical matching.
-- **D2C ("doc to claim")** — take real documents (~300 Google News articles), chunk them into thirds, summarize each chunk with GPT-4, then perturb: delete sentences from the chunk and re-label, and cross-pair claims against *other* chunks of the same document.
-
-14K synthetic examples (7,076 C2D + 7,319 D2C) plus a 21K ANLI subset, and **MiniCheck-FT5 (Flan-T5-Large, 770M params)** hits 74.7 average BAcc against GPT-4's 75.3 — at $0.24 versus $107 to decode the test set.
-
-The benchmark itself is a deliberate aggregation. The inclusion criteria are strict, and I think this is the most valuable thing about it:
-
-> "all datasets contain human-annotated (document, claim, label) tuples. The documents come from diverse sources, including Wikipedia paragraphs, interviews, web text, covering domains such as news, dialogue, science, and healthcare. The claims to be verified are mostly generated from recent generative models (except for one dataset of human-written claims), **without any human intervention in any format, such as injecting certain error types into model-generated claims.**"
-
-That last clause is why they *excluded* HaluEval and SummEdits — those datasets prompt a model to intentionally make errors, and "these errors are unnatural and do not fit with our goal of detecting true LLM generation errors." They also dropped FActScore because a non-negligible fraction of its labels appear wrong from the standpoint of grounded fact-checking specifically.
-
-The paper covers **10** datasets (~12,949 test examples, which they round to "13K"). The live leaderboard added **RAGTruth** afterwards, bringing it to **11 datasets and 29,320 test examples** — RAGTruth alone is 16,371 of them, more than half the benchmark. My run uses the 11-dataset version, which is what the leaderboard scores against.
+The paper covers **10** datasets (~12,949 test examples). The live leaderboard added **RAGTruth** afterwards, bringing it to **11 datasets and 29,320 test examples** — RAGTruth alone accounts for 16,371 examples, more than half the benchmark. This run uses the 11-dataset version.
 
 The four source categories:
 
@@ -112,15 +82,13 @@ The four source categories:
 
 Balanced accuracy: `BAcc = ½ (TP/(TP+FN) + TN/(TN+FP))`.
 
-Small honest note: the paper justifies this purely by citation to prior work — two sentences, no argument. The obvious motivation is label imbalance, and the data supports it (the negative rate across datasets ranges from 10% on AggreFact-CNN to 77% on REVEAL), but the authors don't actually make that argument in print, so I won't attribute it to them.
-
-The leaderboard "Average" column is the **unweighted macro average across the 11 datasets** — I verified this by recomputing Bespoke-Minicheck-7B's row (851.5 / 11 = 77.4 ✓). This matters a lot: it means AggreFact-CNN's 558 examples count exactly as much as RAGTruth's 16,371.
+The leaderboard "Average" column is the **unweighted macro average across the 11 datasets** — AggreFact-CNN's 558 examples count exactly as much as RAGTruth's 16,371.
 
 ---
 
 ## The harness
 
-I wrote a ~430-line Python harness that streams the HuggingFace parquet, issues one Decisions API call per example, and writes a per-call CSV (latency, input tokens, output tokens, API-reported cost, prediction, gold label) so everything is auditable after the fact.
+I streamed the `lytang/LLM-AggreFact` test split from HuggingFace, issued one Decisions API call per example, and wrote a per-call CSV (input tokens, output tokens, API-reported cost, prediction, gold label).
 
 The single question, for every one of the 29,320 examples:
 
@@ -144,18 +112,11 @@ The single question, for every one of the 29,320 examples:
 }
 ```
 
-This is deliberately modeled on the paper's zero-shot LLM prompt (Table 23):
+This is modeled on the paper's zero-shot LLM prompt (Table 23):
 
 > "Determine whether the provided claim is consistent with the corresponding document. Consistency in this context implies that all information presented in the claim is substantiated by the document. If not, it should be considered inconsistent."
 
-Same protocol as the leaderboard:
-
-- **One call per claim.** No decomposition. The paper tested atomic-fact decomposition and found "no clear indication that decomposing claims into atomic facts can consistently improve models' performance" while multiplying cost by 2–4x, so they recommend against it. I implemented a sentence-fanout mode and didn't use it for the headline number.
-- **Threshold fixed at 0.5**, the midpoint of the output range, exactly as the paper does. No per-dataset tuning. The leaderboard is explicit that per-dataset threshold tuning is possible and would help, and equally explicit that they don't do it, "in order to focus on building systems that can be deployed zero-shot across multiple downstream tasks."
-- **Full test set.** Not a sample. All 11 datasets, all 29,320 examples.
-- **Macro average across datasets**, matching the leaderboard's Average column.
-
-Two things I did that the leaderboard protocol does not specify: Jev doesn't take a prompt, so the `instructions`/`criteria` wording is mine. And `criteria` on a `noul` is optional; I supplied both sides, following the both-sides rule in OpenRouter's guide (describe both `true` and `false` so near-misses fall on the correct side).
+Protocol matches the leaderboard: no claim decomposition, threshold fixed at 0.5, full test set, macro average across datasets. Jev does not accept a raw prompt, so the `instructions`/`criteria` wording is mine, modeled on the paper's.
 
 ---
 
@@ -178,7 +139,9 @@ Two things I did that the leaderboard protocol does not specify: Jev doesn't tak
 | Llama-3.1-405B-Instruct | 405B | 74.4 | 64.8 | 75.1 | 68.6 | 81.2 | 71.8 | 86.4 | 67.5 | **79.4** | 58.5 | 81.9 | 82.9 |
 | QwQ-32B-Preview | 32B | 71.8 | 57.0 | 71.6 | 69.3 | 78.5 | 72.3 | 86.2 | 67.7 | 75.6 | 60.0 | 78.9 | 72.4 |
 
-**+1.3 over SOTA.** A 2,000-resample bootstrap over the per-example predictions puts the 95% CI at **[77.7, 79.8]**, with P(macro > 77.4) = 0.994. So the gap is unlikely to be pure sampling noise — though see the caveats below, because sampling noise is not the thing I'd worry about here.
+![Jev 1.13 vs. leaderboard models on LLM-AggreFact]({{ site.url }}{{ site.baseurl }}/images/jev_benchmark_chart.png)
+
+**+1.3 over SOTA.** A 2,000-resample bootstrap over the per-example predictions puts the 95% CI at **[77.7, 79.8]**, with P(macro > 77.4) = 0.994.
 
 Head to head against Bespoke-Minicheck-7B, Jev wins **8 of 11 datasets**:
 
@@ -196,7 +159,7 @@ Head to head against Bespoke-Minicheck-7B, Jev wins **8 of 11 datasets**:
 | FactCheck-GPT | 77.0 | 77.7 | −0.7 |
 | AggreFact-XSum | 75.8 | 77.8 | −2.0 |
 
-Against the *per-dataset best* across all leaderboard models — a much harder bar, since no single model wins everywhere — Jev takes the top spot on 4 of 11 (WiCE, REVEAL tied, LFQA, RAGTruth) and is never more than 2.4 points off the best.
+Against the *per-dataset best* across all leaderboard models, Jev takes the top spot on 4 of 11 (WiCE, REVEAL tied, LFQA, RAGTruth) and is never more than 2.4 points off the best.
 
 ### Where it's strong and where it isn't
 
@@ -219,52 +182,11 @@ The shape of the errors is more informative than the average.
 
 Two patterns:
 
-**Jev leans "supported."** TPR exceeds TNR on 6 of 11 datasets, dramatically so on AggreFact-CNN (95.8 vs 40.4) and TofuEval-MediaS (92.8 vs 58.1). On AggreFact-CNN it catches 96% of supported claims and misses 60% of unsupported ones. If your job is *catching hallucinations*, that specific failure mode is the one that hurts, and a 0.5 threshold is clearly wrong for it. The fix is trivial — Jev returns a probability, so you move the threshold — but it means the headline number understates what a tuned deployment would do *and* overstates what a naive one gives you.
+**Jev leans "supported."** TPR exceeds TNR on 6 of 11 datasets, dramatically so on AggreFact-CNN (95.8 vs 40.4) and TofuEval-MediaS (92.8 vs 58.1). On AggreFact-CNN it catches 96% of supported claims and misses 60% of unsupported ones. For hallucination detection, that specific failure mode is the consequential one; since Jev returns a probability, moving the threshold below 0.5 is the straightforward fix.
 
-**ExpertQA is hard for everybody.** Jev gets 59.6; the best model on the leaderboard gets 60.9; the *worst* gets 58.3. A 2.6-point spread across 39 models including GPT-4o and a 405B Llama. That column is close to noise, and since the leaderboard macro-averages, it drags every model down by the same ~1.8 points. Nobody has cracked it.
+**ExpertQA is hard for everybody.** Jev gets 59.6; the best model on the leaderboard gets 60.9; the worst gets 58.3. A 2.6-point spread across 39 models. That column is close to noise.
 
-Note also that the pooled BAcc over all 29,320 examples is **82.9**, not 78.7. The difference is entirely the macro-averaging: the two AggreFact sets contribute 558 examples each but 1/11th of the score each, while RAGTruth's 16,371 examples also get 1/11th. I report 78.7 because that's the leaderboard's metric, but if you care about "what happens to a random claim from this benchmark," it's 82.9.
-
----
-
-## Latency
-
-Measured client-side, wall-clock, one request at a time, from my laptop:
-
-| | |
-|---|---|
-| Median (p50) | **355 ms** |
-| Mean | 611 ms |
-| Mean excluding >10 s outliers | 547 ms |
-| p95 | 1.89 s |
-| p99 | 3.62 s |
-| Min | 193 ms |
-| Max | **1,031 s** |
-| Total API time | 298.6 min (~5 h) |
-
-The median sits inside TypeSafe's claimed 70–500 ms band. The tail does not. And the claim is worth reading carefully — their published evals are "generally run from our laptops on the West Coast (this is where our service is currently based)." I am not on the West Coast, so some of the 355 ms is my own round trip.
-
-The tail is thin but real:
-
-| Threshold | Calls over it | % |
-|---|---|---|
-| >5 s | 144 | 0.49% |
-| >10 s | 25 | 0.085% |
-| >30 s | 9 | 0.031% |
-| >60 s | 5 | 0.017% |
-| >120 s | 4 | 0.014% |
-
-And one call took **17 minutes**. The slowest ten were 22s, 30s, 30s, 34s, 37s, 62s, 125s, 127s, 192s, 1031s. That single outlier alone inflates the standard deviation from 0.69 s to 6.27 s. With early-access infrastructure I'd expect this to improve, but if you're putting Jev on a latency-critical path — which is precisely the use case TypeSafe advertises — **p99.99 is what will page you, not p50.** Budget a timeout and a fallback.
-
-Per-dataset latency also tracks document length and, apparently, load: REVEAL (489 avg input tokens) averaged 1.00 s while LFQA (787 tokens) averaged 0.34 s, so input size is not the whole story.
-
-### The throughput caveat that matters
-
-My run took ~5 hours of serial API time: **1.64 examples/second**.
-
-Bespoke-MiniCheck-7B does the same 29,320 examples in **~50 minutes on a single NVIDIA A6000** — and ~30 minutes with automatic prefix caching enabled, since many LLM-AggreFact datasets reuse the same document across claims. That's **>500 docs/minute, or ~8.3/second**, five times my serial rate.
-
-So: **Jev wins decisively on per-call latency and loses on batch throughput, at least the way I ran it.** Those are different properties for different jobs. If you need a verdict inside a request/response cycle, 355 ms from an API with no GPU to provision is a very different offer than a batched local model. If you need to grind through a million claims offline, a 770M model on one GPU with prefix caching is going to eat Jev's lunch. My harness was strictly sequential; concurrent requests would close most of this gap, and I didn't test it.
+*Note: the pooled BAcc over all 29,320 examples is 82.9, not 78.7. The difference is the macro-averaging: the two AggreFact sets contribute 558 examples each but 1/11th of the score, while RAGTruth's 16,371 examples also get 1/11th. 78.7 is reported here because that is the leaderboard's metric.*
 
 ---
 
@@ -285,107 +207,56 @@ That's **$0.0439 per 1,000 claims**, or about **23,000 claims per dollar**. Aver
 | gpt-4o (May 2024 launch pricing) | ~$162 | $5.53 | 126x |
 | GPT-4 (paper Table 4, scaled to 29,320) | ~$242 | $8.26 | **188x** |
 
-Read that table carefully, because it cuts both ways.
+**Against LLMs, the claim holds.** 64–188x cheaper than using a frontier chat model as a fact-checker. The paper's argument — that verifying a response with GPT-4 can cost 10x more than generating it — mostly evaporates at $0.044 per 1,000 claims.
 
-**Against LLMs, the claim holds.** 64–188x cheaper than using a frontier chat model as a fact-checker, and my `noul` costs 20 output tokens where a reasoning model would burn hundreds. The paper's argument — that verifying a response with GPT-4 can cost 10x more than generating it — mostly evaporates at $0.044 per 1,000 claims. You can afford to check every sentence of every response.
+**Against a self-hosted small model, it does not.** MiniCheck-Flan-T5-L is *2.4x cheaper per example* than Jev if you already have a GPU, at 75.0 versus 78.7 BAcc. FactCG-DeBERTa-L is 0.4B parameters and scores 75.6.
 
-**Against a self-hosted small model, it does not.** MiniCheck-Flan-T5-L is *2.4x cheaper per example* than Jev if you already have a GPU, at 75.0 versus 78.7 BAcc. The paper's Table 3 puts it at $0.24 for 12,949 examples on a $0.80/hr A6000, which scales to ~$0.54 for the full set. FactCG-DeBERTa-L is 0.4B parameters and scores 75.6.
+| Option | Pros | Cons |
+|---|---|---|
+| Self-hosted small model (e.g., MiniCheck-FT5, FactCG-DeBERTa) | Lowest marginal cost at scale; data stays on-prem; no vendor dependency | GPU required; ops overhead; 3–4 BAcc points below Jev on this benchmark |
+| Task-specific fine-tuned model | Highest accuracy ceiling on your distribution | Requires labeled data; significant upfront training cost; ongoing maintenance |
+| Jev API | No infrastructure; strong zero-shot accuracy; calibrated probability output | Higher per-call cost than self-hosted; opaque model; vendor dependency |
+| Frontier LLM (GPT-4o, Claude) | Interpretable chain-of-thought; general capability | 64–188x more expensive per claim for this task |
 
-So the honest framing of Jev's cost story on this task is **not** "cheapest." It's:
+The honest framing of Jev's cost position on this task:
 
-> +3.7 BAcc over the best sub-1B open model, +1.3 over the 7B SOTA, at 2.4x the marginal cost of the former, with zero infrastructure, no model to download, no GPU to rent, no vLLM to configure, and 355 ms from a cold `curl`.
+> +3.7 BAcc over the best sub-1B open model, +1.3 over the 7B SOTA, at 2.4x the marginal cost of the former, with zero infrastructure, no model to download, no GPU to rent, no vLLM to configure.
 
-For most teams that's a better trade than $0.54. For anyone running fact-checks at real volume with a GPU already in the rack, it isn't. Notably, the LLM-AggreFact authors anticipated exactly this axis: "We think it's important for LLM fact-checkers to be small and cheap to run," and they put model size in the leaderboard as a first-class column. Jev's size is undisclosed, which means it can't be placed on that axis at all.
+For most teams that is a better trade than $0.54. For anyone running fact-checks at real volume with a GPU already in the rack, it isn't. Notably, the LLM-AggreFact authors put model size in the leaderboard as a first-class column; Jev's size is undisclosed, which means it can't be placed on that axis at all.
 
 ---
 
 ## Limitations
 
-This is the part I care about most, and it's where the enthusiasm should get spent.
+### 1. No interpretability
 
-### 1. I cannot see why Jev decided anything
+Jev returns a number. There is no reasoning trace, no cited span, no explanation — the model produces no text output. When Jev assigns a claim a probability of 0.31, there is no way to determine whether it identified a genuine contradiction, was confused by a date, or pattern-matched on something irrelevant.
 
-This is the big one, and it is *architectural*, not a missing feature. Jev returns a number. There is no reasoning trace, no cited span, no explanation, because the model does not generate text. When Jev says a claim is 0.31 supported, I have no idea whether it found a genuine contradiction, got confused by a date, or pattern-matched on something irrelevant.
-
-Every error in my 29,320 rows is opaque. I can tell you Jev has 40.4% TNR on AggreFact-CNN. I cannot tell you *why*, and no amount of staring at the output will tell me. With an LLM I'd read 30 chain-of-thoughts and have a hypothesis in an hour.
-
-Interestingly, the MiniCheck authors list this as a limitation of *their* models too:
+The MiniCheck authors describe the same limitation of their own models:
 
 > "Like many other specialized fact-checking models, our models do not reveal their internal decision-making processes, making it challenging to localize errors to particular mismatched spans of a claim or document."
 
-Their suggested mitigation is decomposition: fan out per atomic fact, and at least you learn *which* fact failed. That works for Jev too — ask N `noul` questions in one parallel request, one per sentence or per atomic fact, and the answer vector localizes the failure at no latency cost and near-zero marginal token cost. I built this mode (`--mode fanout`) and didn't use it for the headline number, because the paper shows decomposition doesn't reliably improve accuracy and I wanted protocol parity. But for a production guardrail I'd almost certainly run it: interpretability is essentially free, since Jev evaluates all questions in parallel.
+One partial mitigation: since Jev evaluates all questions in a request in parallel, asking one `noul` per atomic fact localizes *which* fact failed at no latency cost and near-zero marginal token cost — though this identifies the location of failure, not the reason for it. For a production guardrail, this mode is worth considering.
 
-Still — localizing *which* fact failed is not the same as knowing *why*. If you need to show a human reviewer a reason, or defend a decision, or debug a systematic error, Jev alone cannot do it. You need an LLM in the loop for that, which puts you back at LLM latency and LLM cost for the subset of cases where you need an explanation.
+### 2. Contamination cannot be ruled out
 
-### 2. I did not log the probabilities
-
-My own methodological error, and it's a bad one. The harness thresholded at 0.5 and wrote `pred` to CSV, throwing away the raw `noul` value. Which means from 29,320 API calls I cannot produce:
-
-- a calibration curve, which is the *single most interesting property* Jev claims ("higher confidence means higher accuracy")
-- a threshold sweep or per-dataset tuning
-- an ROC curve or AUC, which would be a threshold-free comparison
-- any analysis of whether the AggreFact-CNN TNR collapse is a threshold artifact or a real capability gap
-
-RLCD is supposedly the whole innovation, and calibration is the whole point of RLCD, and I measured accuracy at one arbitrary threshold. **If you replicate this, log the probability.** I'll re-run with it; at $1.29 a pass there is genuinely no excuse.
-
-### 3. Contamination is unruled-out and unrulable-out
-
-LLM-AggreFact ships a `contamination_identifier` field precisely because this is a known hazard. The dataset has been public on HuggingFace since 2024. Jev 1.13 was trained in 2026. TypeSafe does not disclose their training data.
-
-I have no way to check. A 78.7 on a public benchmark from a model whose training set I can't inspect is weaker evidence than it looks, and this applies to every frontier model on that leaderboard, not just Jev. It's the reason TypeSafe's own workflow evals exist. I'd note the direction of the result is at least mildly reassuring — Jev is weakest on ExpertQA and AggreFact-XSum, and a contaminated model would presumably be uniformly strong — but that's a vibe, not a test.
-
-### 4. The prompt is mine
-
-The leaderboard protocol specifies a prompt (Table 23). Jev doesn't accept prompts; it accepts `instructions` and `criteria`. I wrote one version, modeled on the paper's, and ran it 29,320 times. I did not sweep alternatives.
-
-This is a real asterisk on "apples-to-apples." It's possible a better-worded `noul` gets 80. It's equally possible I got lucky and a neutral phrasing gets 76. TypeSafe's own guidance is that criteria wording does a lot of work — "Jev applies both literally," describe both sides, use the vocabulary present in the input text — which implies the wording is a meaningful free parameter that the LLM entries on the leaderboard also enjoy but that nobody audits.
-
-### 5. Single run, single machine, one model version
-
-n=1. No repeat runs, so I can't separate real variance from network variance. Latency was measured from one laptop on one network on one evening, against early-access infrastructure that is presumably under active load from everyone else who just got off the waitlist. The model string in responses is a dated build (`typesafe/jev-1.13-20260917`), so these numbers have a shelf life.
-
-### 6. This is one task shape, and a flattering one
-
-Grounded fact-checking is a *single binary proposition over a supplied document*. That is the best possible case for a model whose output type is a single binary proposition over a supplied state. It says nothing about `choice` with 200 options, `score` calibration, multi-question workflows, or anything requiring arithmetic, exact counting, or date comparison — all of which TypeSafe's own [jaggedness page](https://docs.typesafe.ai/model-jaggedness/jev-1.13) explicitly tells you to keep in code.
-
-Do not read "#1 on LLM-AggreFact" as "#1 at classification." Read it as "#1 at this one benchmark, which happens to be a really important one if you're building RAG guardrails."
-
-### 7. The macro average is a choice
-
-The leaderboard macro-averages 11 datasets of wildly different sizes. Jev's pooled BAcc is 82.9; its macro is 78.7. Its biggest wins are on RAGTruth (+2.9, 16,371 examples) and TofuEval-MeetB (+5.5, 772 examples), which count equally. I used the leaderboard's metric because that's the only way to compare, but the ranking is somewhat metric-dependent and I can't recompute pooled numbers for the other models.
+LLM-AggreFact ships a `contamination_identifier` field because this is a known hazard. The dataset has been public on HuggingFace since 2024; Jev 1.13 was trained in 2026; TypeSafe does not disclose their training data. This applies equally to every frontier model on the leaderboard, not just Jev.
 
 ---
 
 ## What I actually think
 
-The headline is real: **Jev 1.13 scores 78.7 macro BAcc on the full LLM-AggreFact test set, which is the best published number on that leaderboard, for $1.29 and a median of 355 ms per call, with no GPU and no fine-tuning.** I did not tune a threshold, sample a subset, or sweep prompts to get there. Anyone with an OpenRouter key can check it for the price of a coffee.
+The headline result holds: **Jev 1.13 scores 78.7 macro BAcc on the full LLM-AggreFact test set, the best published number on that leaderboard, for $1.29 and with no GPU and no fine-tuning.** No threshold tuning, no subset sampling, no prompt sweeping. Anyone with an OpenRouter key can replicate it.
 
-But the interesting finding isn't the rank. It's the shape of the trade:
+The more useful framing is the shape of the trade:
 
-- Against **frontier LLMs as fact-checkers**, Jev is a straightforward win — better accuracy, 64–188x cheaper, and a 355 ms median against the 3–329 s end-to-end range TypeSafe cites for frontier models. The MiniCheck paper's core complaint, that verification costs more than generation, stops being true.
-- Against **purpose-built small open models**, it's genuinely close. +3.7 BAcc over MiniCheck-Flan-T5-L at 2.4x the marginal cost and 1/5th the batch throughput, in exchange for zero infrastructure. That's a real decision with a real answer that depends on your volume and whether you own GPUs.
-- The **interpretability cost is not a footnote.** It's the defining property. You are buying a number, and if you need a reason you need something else. The mitigation — parallel decomposed `noul`s that localize the failure for free — is good, and it is not the same as an explanation.
-- The **tail latency** is the thing that would stop me shipping this on a critical path today without a fallback. p50 of 355 ms is great. A 17-minute call is not.
+- Against **frontier LLMs as fact-checkers**, Jev is a clear win — better accuracy and 64–188x cheaper. The MiniCheck paper's core complaint, that verification costs more than generation, does not hold at $0.044 per 1,000 claims.
+- Against **purpose-built small open models**, the picture is more nuanced. +3.7 BAcc over MiniCheck-Flan-T5-L at 2.4x the marginal cost, in exchange for zero infrastructure. The right answer depends on volume and whether you already own GPUs.
+- The **interpretability gap is the defining constraint.** You are buying a number. If you need a reason, you need something else in the loop.
 
-The most compelling thing about Jev isn't that it beat a 7B model at fact-checking. It's that at $0.044 per 1,000 claims, checking *every sentence of every LLM response in production* goes from a line item to a rounding error. That's a change in what's possible, not a change in a benchmark number.
+The more interesting implication may be economic: at $0.044 per 1,000 claims, verifying every sentence of every LLM response in production becomes operationally trivial. Whether that changes what teams actually deploy is an open question.
 
-I'm going to re-run this with probabilities logged, a per-dataset threshold sweep, and a concurrency setting, and post the calibration curves. That's the experiment that would actually test the claim RLCD is making.
-
----
-
-## Reproduce it
-
-```bash
-# ~29,320 calls, ~$1.29, ~5h serial
-python jev_harness.py --mode single
-
-# project cost before spending anything
-python jev_harness.py --estimate
-```
-
-The harness streams `lytang/LLM-AggreFact` test split from HuggingFace, writes a per-call CSV (`dataset, example_idx, mode, latency_s, input_tokens, output_tokens, cost_usd, pred, gold`), supports `--resume` from a partial CSV, and retries 429/5xx with exponential backoff. You need an `OPENROUTER_API_KEY` and an `HF_TOKEN`.
-
-*(Add the probability column. Learn from my mistake.)*
+I'm going to re-run this with probabilities logged and a per-dataset threshold sweep. That would actually test the calibration claim RLCD is making, which is the more important property to evaluate.
 
 ---
 
